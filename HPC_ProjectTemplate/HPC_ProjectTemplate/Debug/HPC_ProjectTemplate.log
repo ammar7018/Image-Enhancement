@@ -1,0 +1,7 @@
+﻿  .NETFramework,Version=v4.0.AssemblyAttributes.cpp
+  Source.cpp
+F:\Visual Projects\HPC_ProjectTemplate\HPC_ProjectTemplate\Source.cpp(132,28): warning C4244: '=': conversion from 'float' to 'int', possible loss of data
+F:\Visual Projects\HPC_ProjectTemplate\HPC_ProjectTemplate\Source.cpp(208,70): warning C4244: '+=': conversion from 'double' to 'int', possible loss of data
+  Generating Code...
+  Source.obj : MSIL module encountered; incremental linking is disabled for MSIL; performing full link
+  HPC_ProjectTemplate.vcxproj -> F:\Visual Projects\HPC_ProjectTemplate\Debug\HPC_ProjectTemplate.exe

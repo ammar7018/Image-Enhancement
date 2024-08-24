@@ -1,0 +1,284 @@
+#include <iostream>
+#include <math.h>
+#include <stdlib.h>
+#include<string.h>
+#include<msclr\marshal_cppstd.h>
+#include <ctime>// include this header 
+#include <mpi.h>
+#pragma once
+
+#using <mscorlib.dll>
+#using <System.dll>
+#using <System.Drawing.dll>
+#using <System.Windows.Forms.dll>
+using namespace std;
+using namespace msclr::interop;
+
+int ImageWidth=4, ImageHeight=4;
+
+int* inputImage(int* w, int* h, System::String^ imagePath) //put the size of image in w & h
+{
+	int* input;
+
+	int OriginalImageWidth, OriginalImageHeight;
+
+	//*********************************************************Read Image and save it to local arrayss*************************	
+	//Read Image and save it to local arrayss
+
+	System::Drawing::Bitmap BM(imagePath);
+
+	OriginalImageWidth = BM.Width;
+	OriginalImageHeight = BM.Height;
+
+	ImageHeight = BM.Height;
+	ImageWidth = BM.Width;
+
+	//ImageWidth = BM.Width,ImageHeight=BM.Height;
+
+	*w = BM.Width;
+	*h = BM.Height;
+	int *Red = new int[BM.Height * BM.Width];
+	int *Green = new int[BM.Height * BM.Width];
+	int *Blue = new int[BM.Height * BM.Width];
+	input = new int[BM.Height*BM.Width];
+	for (int i = 0; i < BM.Height; i++)
+	{
+		for (int j = 0; j < BM.Width; j++)
+		{
+			System::Drawing::Color c = BM.GetPixel(j, i);
+
+			Red[i * BM.Width + j] = c.R;
+			Blue[i * BM.Width + j] = c.B;
+			Green[i * BM.Width + j] = c.G;
+
+			input[i*BM.Width + j] = ((c.R + c.B + c.G) / 3); //gray scale value equals the average of RGB values
+
+		}
+
+	}
+	
+	return input;
+}
+
+
+void createImage(int* image, int width, int height, int index)
+{
+	System::Drawing::Bitmap MyNewImage(width, height);
+
+
+	for (int i = 0; i < MyNewImage.Height; i++)
+	{
+		for (int j = 0; j < MyNewImage.Width; j++)
+		{
+			//i * OriginalImageWidth + j
+			if (image[i*width + j] < 0)
+			{
+				image[i*width + j] = 0;
+			}
+			if (image[i*width + j] > 255)
+			{
+				image[i*width + j] = 255;
+			}
+			System::Drawing::Color c = System::Drawing::Color::FromArgb(image[i*MyNewImage.Width + j], image[i*MyNewImage.Width + j], image[i*MyNewImage.Width + j]);
+			MyNewImage.SetPixel(j, i, c);
+		}
+	}
+	MyNewImage.Save("..//Data//Output//outputRes" + index + ".png");
+	cout << "result Image Saved " << index << endl;
+}
+
+const int color_range =	9,rate=20;
+
+float local_PDF[color_range+20];
+float global_PDF[color_range+20];
+float CDF[color_range+20];
+
+int local_frequency[color_range];
+int local_output[color_range + 20];
+int global_frequency[color_range];
+int final_output[color_range + 20];
+
+void countFrequency(int *image, int width, int height,int rank,int world_size) {
+
+
+	//todo: static vs dynamic
+	int chunk_size = (width * height) / world_size;
+	int start = rank * chunk_size;
+	int end = start + chunk_size;
+	
+	for (int i = start; i < end; i++) {
+		local_frequency[image[i]]++;
+	}
+
+	// extra pixels smaller than a chunk
+	if (rank == world_size - 1) {
+		for (int i = end; i < (width * height); i++) {
+			local_frequency[image[i]]++;
+		}
+	}
+
+
+	MPI_Reduce(&local_frequency, &global_frequency, color_range, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+	MPI_Bcast(&global_frequency, color_range, MPI_INT, 0, MPI_COMM_WORLD);
+
+	if (rank == 0)
+	{
+		//cout << "global frequency:" << start << " " << end << " " << rank << "\n";
+		//for (int i = 0; i < color_range; i++) {
+		//	cout << global_frequency[i] << " ";
+		//}
+		//cout << endl;
+
+		//int image_size = width * height;
+
+		//How to divide it to every core calc one chunk
+		// 
+		//for (int i = 0; i < color_range; i++) {
+		//	local_PDF[i] = (float)global_frequency[i] / (float)image_size;
+		//	cout << local_PDF[i] << " ";
+		//}
+		//cout << endl;
+
+	}
+
+}
+
+void calcCDF() { // Seq
+	CDF[0] = global_PDF[0];
+	for (int i = 1; i < color_range; i++) {
+		CDF[i] = CDF[i - 1] + global_PDF[i];
+	}
+}
+
+void calcPDF(int* image, int width, int height, int rank, int world_size) {
+	
+	//int world_size;
+	//MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+	//int rank;
+	//MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+	//cout << "HERE" <<" "<<rank << endl;
+
+
+	int size = width * height;
+	int chunk_size = color_range / world_size;
+	int start = rank * chunk_size;
+	int end = start + chunk_size;
+
+	for (int i = start; i < end; i++) {
+		local_PDF[i] += (float)global_frequency[i] / (float)size;
+	}
+
+	if (rank == world_size - 1) {
+		for (int i = end; i < color_range; i++) {
+			local_PDF[i] += (float)global_frequency[i] / (float)size;
+		}
+	}
+
+	MPI_Reduce(local_PDF, global_PDF, color_range, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
+	MPI_Bcast(&global_PDF, color_range, MPI_FLOAT, 0, MPI_COMM_WORLD);
+
+
+	/*if (rank == 0) {
+		calcCDF();
+		MPI_Bcast(&CDF, color_range, MPI_FLOAT, 0, MPI_COMM_WORLD);
+	}
+
+	if (rank == 0) {
+		for (int i = 0; i < color_range; i++) {
+			cout << global_PDF[i] << " ";
+		}
+		cout << endl;
+	}*/
+
+}
+
+void scale(int rank, int world_size) { // Parallel
+	
+	int chunk_size = color_range / world_size;
+	int start = rank * chunk_size;
+	int end = start + chunk_size;
+
+	for (int i = start; i < end; i++) {
+		local_output[i] = CDF[i] * rate;
+	}
+
+	if (rank == world_size - 1) {
+		for (int i = end; i < color_range; i++) {
+		/*cout << CDF[i] << " " << rate << endl;*/
+			local_output[i] = CDF[i] * rate;
+		}
+	}
+
+	MPI_Bcast(&final_output, color_range, MPI_INT, 0, MPI_COMM_WORLD);
+}
+
+int main()
+{
+
+	int start_s, stop_s, TotalTime = 0;
+
+	System::String^ imagePath;
+	std::string img;
+	img = "..//Data//Input//test.png";
+
+	imagePath = marshal_as<System::String^>(img);
+	int* imageData = inputImage(&ImageWidth, &ImageHeight, imagePath);
+
+	int arr[] = { 3, 2, 4, 5, 7, 7, 8, 2, 3, 1, 2, 3, 5, 4, 6, 7 };
+
+	int imageSize = ImageHeight * ImageWidth; 
+
+	//cout << ImageHeight << " " << ImageWidth << endl;
+
+	MPI_Init(NULL, NULL);
+
+	int world_size;
+	MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+	int rank;
+	MPI_Comm_rank(MPI_COMM_WORLD,&rank);
+
+	countFrequency(arr, 4, 4,rank,world_size);
+
+	calcPDF(arr, 4, 4,rank,world_size);
+	
+	if (rank == 0) {
+		calcCDF();
+	scale(rank, world_size);
+		MPI_Bcast(&CDF, color_range, MPI_FLOAT, 0, MPI_COMM_WORLD);
+	}
+
+	
+	if (rank == 0) {
+		for (int i = 0; i < imageSize; i++) {
+			imageData[i] = final_output[ imageData[i] ];
+		}
+		MPI_Bcast(&imageData, color_range, MPI_INT, 0, MPI_COMM_WORLD);
+	}
+
+	if (rank == 0) {
+
+		for (int i = 0; i < color_range; i++) {
+			cout << CDF[i] << " ";
+		}
+		cout << endl;
+
+		for (int i = 0; i < color_range; i++) {
+			cout << final_output[i] << " ";
+		}
+		cout << endl;
+	}
+
+
+	MPI_Finalize();
+
+	start_s = clock();
+	//createImage(imageData, ImageWidth, ImageHeight, 1);
+	stop_s = clock();
+	TotalTime += (stop_s - start_s) / double(CLOCKS_PER_SEC) * 1000;
+	cout << "time: " << TotalTime << endl;
+
+	free(imageData);
+	return 0;
+
+}

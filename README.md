@@ -1,2 +1,2 @@
 # Image-Enhancement
- This program applies histogram equalization to the image whose path (typically, in the Input folder) is specified in the main function, and stores is in the Output folder. It uses MPI library to apply histogram qualization parallelly on multiple cores of your device and apply parallel programming concepts.
+This application applies histogram equalization to an image, whose path (usually in the Input folder) is provided in the main function, and saves the processed image to the Output folder. It uses the MPI library to perform histogram equalization in parallel across multiple device cores, leveraging parallel programming techniques to reduce runtime.
